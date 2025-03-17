@@ -1,0 +1,28 @@
+#!/usr/bin/with-contenv bashio
+# ==============================================================================
+# Start Prometheus PostgreSQL exporter if enabled
+# ==============================================================================
+
+# Check if Prometheus exporter is enabled
+if ! bashio::config.true 'prometheus_exporter'; then
+    bashio::log.info "Prometheus PostgreSQL exporter is disabled, not starting"
+    sleep infinity
+    exit 0
+fi
+
+bashio::log.info "Starting Prometheus PostgreSQL exporter..."
+
+# Wait for PostgreSQL to start
+bashio::log.info "Waiting for PostgreSQL to be ready..."
+until pg_isready -U postgres; do
+    sleep 1
+done
+
+# Set environment variables for the exporter
+export DATA_SOURCE_NAME="postgresql://postgres:${POSTGRES_PASSWORD}@localhost:5432/postgres?sslmode=disable"
+
+# Start exporter
+exec s6-setuidgid postgres /usr/local/bin/postgres_exporter/postgres_exporter \
+    --web.listen-address=:9187 \
+    --web.telemetry-path=/metrics \
+    --extend.query-path="" 

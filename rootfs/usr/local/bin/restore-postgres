@@ -1,0 +1,86 @@
+#!/usr/bin/with-contenv bashio
+# ==============================================================================
+# Restore PostgreSQL databases
+# ==============================================================================
+
+BACKUP_FILE="$1"
+BACKUP_DIR="/backup"
+TEMP_DIR="${BACKUP_DIR}/temp_restore"
+
+if [ -z "${BACKUP_FILE}" ]; then
+    # No backup file specified, list available backups
+    bashio::log.info "No backup file specified. Available backups:"
+    find "${BACKUP_DIR}" -name "postgres_backup_*.sql.gz" -type f -exec basename {} \; | sort -r
+    exit 0
+fi
+
+# Make sure the backup file exists
+if [ ! -f "${BACKUP_FILE}" ] && [ ! -f "${BACKUP_DIR}/${BACKUP_FILE}" ]; then
+    bashio::log.error "Backup file not found: ${BACKUP_FILE}"
+    exit 1
+fi
+
+# If only filename was given, prepend backup directory
+if [ ! -f "${BACKUP_FILE}" ]; then
+    BACKUP_FILE="${BACKUP_DIR}/${BACKUP_FILE}"
+fi
+
+bashio::log.info "Starting PostgreSQL restore from: ${BACKUP_FILE}"
+
+# Make sure PostgreSQL is running
+if ! pg_isready -U postgres; then
+    bashio::log.error "PostgreSQL is not running, cannot restore"
+    exit 1
+fi
+
+# Create and clean temporary directory
+rm -rf "${TEMP_DIR}"
+mkdir -p "${TEMP_DIR}"
+chown postgres:postgres "${TEMP_DIR}"
+
+# Extract backup to temporary directory
+tar -xzf "${BACKUP_FILE}" -C "${TEMP_DIR}"
+
+# Check if we have database dumps
+if [ ! "$(ls -A ${TEMP_DIR}/*.dump 2>/dev/null)" ]; then
+    bashio::log.error "No database dumps found in backup"
+    rm -rf "${TEMP_DIR}"
+    exit 1
+fi
+
+# Get existing databases
+EXISTING_DBS=$(su - postgres -c "psql -t -c \"SELECT datname FROM pg_database WHERE datname NOT IN ('template0', 'template1', 'postgres')\"" | tr -d ' ')
+
+# For each database dump file
+for DB_FILE in ${TEMP_DIR}/*.dump; do
+    DB_NAME=$(basename "${DB_FILE}" .dump)
+    
+    bashio::log.info "Restoring database: ${DB_NAME}"
+    
+    # Check if database exists
+    if echo "${EXISTING_DBS}" | grep -q "^${DB_NAME}$"; then
+        # Terminate all connections to the database
+        su - postgres -c "psql -c \"SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname='${DB_NAME}' AND pid<>pg_backend_pid();\""
+        
+        # Drop existing database
+        su - postgres -c "dropdb ${DB_NAME}"
+    fi
+    
+    # Create new database from postgis template
+    su - postgres -c "createdb --template=template_postgis ${DB_NAME}"
+    
+    # Restore the database
+    su - postgres -c "pg_restore -d ${DB_NAME} ${DB_FILE}"
+    
+    # Check if restore was successful
+    if [ $? -ne 0 ]; then
+        bashio::log.warning "Some errors occurred during restore of: ${DB_NAME}"
+    else
+        bashio::log.info "Successfully restored database: ${DB_NAME}"
+    fi
+done
+
+# Cleanup
+rm -rf "${TEMP_DIR}"
+
+bashio::log.info "PostgreSQL restore completed" 

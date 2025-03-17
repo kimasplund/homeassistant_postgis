@@ -1,0 +1,3 @@
+name: PostgreSQL 17 with PostGIS
+url: https://github.com/kimasplund/homeassistant_postgis
+maintainer: Kim Asplund <kim.asplund@gmail.com> 
