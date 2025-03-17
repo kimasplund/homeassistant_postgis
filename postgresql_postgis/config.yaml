@@ -3,7 +3,7 @@ version: "0.1.0"
 slug: "postgresql_postgis"
 description: "PostgreSQL 17 database server with PostGIS 3.5.2 extension"
 url: "https://github.com/kimasplund/homeassistant_postgis"
-icon: "icon.png"
+icon: "icon/icon.png"
 arch:
   - aarch64
   - amd64
