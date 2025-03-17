@@ -6,14 +6,14 @@
 bashio::log.info "Starting PostgreSQL..."
 
 # Ensure data directory exists and has proper permissions
-if [ ! -d "${PGDATA}" ]; then
+if [ ! -d "${PGDATA}" ] || [ -z "$(ls -A ${PGDATA})" ]; then
     bashio::log.info "Initializing PostgreSQL data directory..."
     mkdir -p "${PGDATA}"
     chown -R postgres:postgres "${PGDATA}"
     chmod 700 "${PGDATA}"
     
     # Initialize database
-    su - postgres -c "initdb --auth-local=trust --auth-host=md5 -E UTF8"
+    su - postgres -c "initdb -D ${PGDATA} --auth-local=trust --auth-host=md5 -E UTF8"
     
     # Create PostGIS template
     su - postgres -c "pg_ctl -D ${PGDATA} start"
