@@ -6,6 +6,12 @@ ENV LANG C.UTF-8
 ENV PGDATA /var/lib/postgresql/data
 ENV POSTGRES_PASSWORD postgres
 
+# Check for and remove any existing PostgreSQL packages
+RUN apt-get update && apt-get remove -y postgresql* || true \
+    && apt-get autoremove -y \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/*
+
 # First install base dependencies - more cautious approach for ARM
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
@@ -73,7 +79,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libgeos-dev \
     libspatialindex-dev \
     libpq-dev \
-    postgresql-server-dev-all \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
@@ -87,8 +92,26 @@ ENV POSTGIS_VERSION 3.5.2
 # Set Prometheus exporter version
 ENV PG_EXPORTER_VERSION 0.15.0
 
-# Create postgres user and group
-RUN groupadd -r postgres --gid=999 && useradd -r -g postgres --uid=999 postgres
+# Create postgres user and group - handle cases where ID might already exist
+RUN if getent group postgres > /dev/null; then \
+        echo "Group postgres already exists"; \
+    else \
+        groupadd -r postgres; \
+    fi && \
+    if getent passwd postgres > /dev/null; then \
+        echo "User postgres already exists"; \
+    else \
+        useradd -r -g postgres postgres; \
+    fi
+
+# Install additional build dependencies for PostgreSQL
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    libssl-dev \
+    zlib1g-dev \
+    libreadline-dev \
+    libpam0g-dev \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/*
 
 # Download and build PostgreSQL
 WORKDIR /usr/src
@@ -100,6 +123,8 @@ RUN wget https://ftp.postgresql.org/pub/source/v${PG_VERSION}/postgresql-${PG_VE
         --with-openssl \
         --with-libxml \
         --with-libxslt \
+        --with-readline \
+        --libdir=/usr/local/lib \
     && make -j$(nproc) \
     && make install \
     && cd contrib \
@@ -148,12 +173,20 @@ RUN mkdir -p /backup \
 # Copy root filesystem
 COPY rootfs /
 
-# Set executable permissions for scripts
-RUN chmod +x /etc/services.d/postgresql/run \
-    && chmod +x /etc/services.d/postgresql/finish \
-    && chmod +x /usr/local/bin/backup-postgres \
-    && chmod +x /usr/local/bin/restore-postgres \
-    && chmod +x /usr/local/bin/generate-ssl-cert
+# Create directories and set executable permissions for scripts
+RUN mkdir -p /etc/services.d/postgresql \
+    /etc/services.d/prometheus-postgres-exporter \
+    /etc/services.d/backup-scheduler \
+    /usr/local/bin \
+    && if [ -f /etc/services.d/postgresql/run ]; then chmod +x /etc/services.d/postgresql/run; fi \
+    && if [ -f /etc/services.d/postgresql/finish ]; then chmod +x /etc/services.d/postgresql/finish; fi \
+    && if [ -f /etc/services.d/prometheus-postgres-exporter/run ]; then chmod +x /etc/services.d/prometheus-postgres-exporter/run; fi \
+    && if [ -f /etc/services.d/prometheus-postgres-exporter/finish ]; then chmod +x /etc/services.d/prometheus-postgres-exporter/finish; fi \
+    && if [ -f /etc/services.d/backup-scheduler/run ]; then chmod +x /etc/services.d/backup-scheduler/run; fi \
+    && if [ -f /etc/services.d/backup-scheduler/finish ]; then chmod +x /etc/services.d/backup-scheduler/finish; fi \
+    && if [ -f /usr/local/bin/backup-postgres ]; then chmod +x /usr/local/bin/backup-postgres; fi \
+    && if [ -f /usr/local/bin/restore-postgres ]; then chmod +x /usr/local/bin/restore-postgres; fi \
+    && if [ -f /usr/local/bin/generate-ssl-cert ]; then chmod +x /usr/local/bin/generate-ssl-cert; fi
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
