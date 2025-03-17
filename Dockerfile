@@ -56,36 +56,18 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 ARG BUILD_ARCH=amd64
 RUN echo "Building for architecture: ${BUILD_ARCH}"
 
-# Third, install PostGIS dependencies with architecture-specific approach
-RUN if [ "$BUILD_ARCH" = "armv7" ] || [ "$BUILD_ARCH" = "armhf" ]; then \
-        # Reduced dependencies for ARM architectures that might have issues
-        apt-get update && apt-get install -y --no-install-recommends \
-        libgdal-dev \
-        libproj-dev \
-        && apt-get clean \
-        && rm -rf /var/lib/apt/lists/*; \
-    else \
-        # Full dependencies for other architectures
-        apt-get update && apt-get install -y --no-install-recommends \
-        libgdal-dev \
-        libproj-dev \
-        && apt-get clean \
-        && rm -rf /var/lib/apt/lists/*; \
-    fi
+# Third, install PostGIS dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    libgdal-dev \
+    libproj-dev \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/*
 
-RUN if [ "$BUILD_ARCH" = "armv7" ] || [ "$BUILD_ARCH" = "armhf" ]; then \
-        # Special handling for protobuf on ARM
-        apt-get update && apt-get install -y --no-install-recommends \
-        libprotobuf-c-dev \
-        && apt-get clean \
-        && rm -rf /var/lib/apt/lists/*; \
-    else \
-        apt-get update && apt-get install -y --no-install-recommends \
-        libprotobuf-c-dev \
-        protobuf-c-compiler \
-        && apt-get clean \
-        && rm -rf /var/lib/apt/lists/*; \
-    fi
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    libprotobuf-c-dev \
+    protobuf-c-compiler \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/*
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     libgeos-dev \
@@ -126,17 +108,11 @@ RUN wget https://ftp.postgresql.org/pub/source/v${PG_VERSION}/postgresql-${PG_VE
     && cd .. \
     && rm -rf /usr/src/postgresql-${PG_VERSION}*
 
-# Download and build PostGIS with architecture-specific options
+# Download and build PostGIS
 RUN wget https://download.osgeo.org/postgis/source/postgis-${POSTGIS_VERSION}.tar.gz \
     && tar -xzf postgis-${POSTGIS_VERSION}.tar.gz \
     && cd postgis-${POSTGIS_VERSION} \
-    && if [ "$BUILD_ARCH" = "armv7" ] || [ "$BUILD_ARCH" = "armhf" ]; then \
-        # Limited features for ARM
-        ./configure --without-protobuf; \
-    else \
-        # Full features for other architectures
-        ./configure; \
-    fi \
+    && ./configure \
     && make -j$(nproc) \
     && make install \
     && cd .. \

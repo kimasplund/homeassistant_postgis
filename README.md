@@ -6,9 +6,6 @@
 
 ![Supports aarch64 Architecture][aarch64-shield]
 ![Supports amd64 Architecture][amd64-shield]
-![Supports armhf Architecture][armhf-shield]
-![Supports armv7 Architecture][armv7-shield]
-![Supports i386 Architecture][i386-shield]
 
 PostgreSQL 17 database server with PostGIS 3.5.2 extension for Home Assistant.
 
@@ -150,9 +147,7 @@ When `prometheus_exporter` is enabled, PostgreSQL metrics are exposed on port 91
 
 To view and analyze the metrics, you'll need to set up a Prometheus server and configure it to scrape metrics from this endpoint.
 
-> **Note:** The Prometheus exporter is fully supported on amd64 and aarch64 (ARM64) architectures. For other architectures (armv7, armhf, i386), the exporter will be disabled even if enabled in configuration due to binary availability limitations.
-
-> **ARM architecture note:** On armhf and armv7 architectures, PostGIS is built with reduced functionality (without protobuf support) to improve compatibility and build success. This should not affect most use cases but may limit some advanced features.
+> **Note:** The Prometheus exporter is fully supported on both amd64 and aarch64 (ARM64) architectures.
 
 ## Using PostGIS with Home Assistant
 
@@ -248,9 +243,6 @@ In case you've found a bug, please [open an issue on GitHub][issue].
 
 [aarch64-shield]: https://img.shields.io/badge/aarch64-yes-green.svg
 [amd64-shield]: https://img.shields.io/badge/amd64-yes-green.svg
-[armhf-shield]: https://img.shields.io/badge/armhf-yes-green.svg
-[armv7-shield]: https://img.shields.io/badge/armv7-yes-green.svg
-[i386-shield]: https://img.shields.io/badge/i386-yes-green.svg
 [discord]: https://discord.gg/c5DvZ4e
 [forum]: https://community.home-assistant.io
 [issue]: https://github.com/kimasplund/homeassistant_postgis/issues

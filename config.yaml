@@ -4,11 +4,8 @@ slug: "postgresql_postgis"
 description: "PostgreSQL 17 database server with PostGIS 3.5.2 extension"
 url: "https://github.com/kimasplund/homeassistant_postgis"
 arch:
-  - armhf
-  - armv7
   - aarch64
   - amd64
-  - i386
 init: false
 startup: services
 boot: auto
