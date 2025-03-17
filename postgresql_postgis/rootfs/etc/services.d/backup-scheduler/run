@@ -1,0 +1,37 @@
+#!/usr/bin/with-contenv bashio
+# ==============================================================================
+# Start backup scheduler service
+# ==============================================================================
+
+bashio::log.info "Starting PostgreSQL backup scheduler..."
+
+# Get backup time from config (format: HH:MM)
+BACKUP_TIME=$(bashio::config 'backup_time')
+BACKUP_HOUR="${BACKUP_TIME%:*}"
+BACKUP_MINUTE="${BACKUP_TIME#*:}"
+
+# Remove leading zeros
+BACKUP_HOUR="${BACKUP_HOUR#0}"
+BACKUP_MINUTE="${BACKUP_MINUTE#0}"
+
+# Function to run backup
+function run_backup() {
+    bashio::log.info "Scheduled backup starting..."
+    /usr/local/bin/backup-postgres
+}
+
+while true; do
+    # Get current time
+    CURRENT_HOUR=$(date +"%H" | sed 's/^0//')
+    CURRENT_MINUTE=$(date +"%M" | sed 's/^0//')
+    
+    # Check if it's time to run backup
+    if [ "${CURRENT_HOUR}" -eq "${BACKUP_HOUR}" ] && [ "${CURRENT_MINUTE}" -eq "${BACKUP_MINUTE}" ]; then
+        run_backup
+        # Sleep for 60 seconds to avoid running backup multiple times
+        sleep 60
+    fi
+    
+    # Sleep for 30 seconds before checking again
+    sleep 30
+done 

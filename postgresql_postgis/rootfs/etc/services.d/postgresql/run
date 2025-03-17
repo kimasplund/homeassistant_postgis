@@ -1,0 +1,150 @@
+#!/usr/bin/with-contenv bashio
+# ==============================================================================
+# Start PostgreSQL service
+# ==============================================================================
+
+bashio::log.info "Starting PostgreSQL..."
+
+# Ensure data directory exists and has proper permissions
+if [ ! -d "${PGDATA}" ] || [ -z "$(ls -A ${PGDATA})" ]; then
+    bashio::log.info "Initializing PostgreSQL data directory..."
+    mkdir -p "${PGDATA}"
+    chown -R postgres:postgres "${PGDATA}"
+    chmod 700 "${PGDATA}"
+    
+    # Initialize database
+    su - postgres -c "initdb -D ${PGDATA} --auth-local=trust --auth-host=md5 -E UTF8"
+    
+    # Create PostGIS template
+    su - postgres -c "pg_ctl -D ${PGDATA} start"
+    su - postgres -c "createdb template_postgis"
+    su - postgres -c "psql -d template_postgis -c 'CREATE EXTENSION postgis;'"
+    su - postgres -c "psql -d template_postgis -c 'CREATE EXTENSION postgis_topology;'"
+    su - postgres -c "psql -d template_postgis -c 'CREATE EXTENSION fuzzystrmatch;'"
+    su - postgres -c "psql -d template_postgis -c 'CREATE EXTENSION postgis_tiger_geocoder;'"
+    su - postgres -c "pg_ctl -D ${PGDATA} stop"
+fi
+
+# Configure postgresql.conf with performance settings
+PGCONF="${PGDATA}/postgresql.conf"
+sed -i "s/^#listen_addresses = 'localhost'/listen_addresses = '*'/" "${PGCONF}"
+sed -i "s/^#port = 5432/port = 5432/" "${PGCONF}"
+
+# Apply performance tuning settings
+MAX_CONNECTIONS=$(bashio::config 'max_connections')
+SHARED_BUFFERS=$(bashio::config 'shared_buffers')
+WORK_MEM=$(bashio::config 'work_mem')
+MAINTENANCE_WORK_MEM=$(bashio::config 'maintenance_work_mem')
+EFFECTIVE_CACHE_SIZE=$(bashio::config 'effective_cache_size')
+
+# Update configuration with tuning parameters
+sed -i "s/^max_connections = .*$/max_connections = ${MAX_CONNECTIONS}/" "${PGCONF}"
+sed -i "s/^shared_buffers = .*$/shared_buffers = ${SHARED_BUFFERS}/" "${PGCONF}"
+grep -q "^work_mem =" "${PGCONF}" && \
+    sed -i "s/^work_mem = .*$/work_mem = ${WORK_MEM}/" "${PGCONF}" || \
+    echo "work_mem = ${WORK_MEM}" >> "${PGCONF}"
+grep -q "^maintenance_work_mem =" "${PGCONF}" && \
+    sed -i "s/^maintenance_work_mem = .*$/maintenance_work_mem = ${MAINTENANCE_WORK_MEM}/" "${PGCONF}" || \
+    echo "maintenance_work_mem = ${MAINTENANCE_WORK_MEM}" >> "${PGCONF}"
+grep -q "^effective_cache_size =" "${PGCONF}" && \
+    sed -i "s/^effective_cache_size = .*$/effective_cache_size = ${EFFECTIVE_CACHE_SIZE}/" "${PGCONF}" || \
+    echo "effective_cache_size = ${EFFECTIVE_CACHE_SIZE}" >> "${PGCONF}"
+
+# Configure SSL if enabled
+if bashio::config.true 'ssl'; then
+    bashio::log.info "SSL is enabled, configuring certificates..."
+    /usr/local/bin/generate-ssl-cert
+fi
+
+# Configure pg_hba.conf for network access control
+PGHBA="${PGDATA}/pg_hba.conf"
+echo "# TYPE  DATABASE        USER            ADDRESS                 METHOD" > "${PGHBA}"
+echo "local   all             postgres                                trust" >> "${PGHBA}"
+echo "local   all             all                                     md5" >> "${PGHBA}"
+echo "host    all             all             127.0.0.1/32            md5" >> "${PGHBA}"
+echo "host    all             all             ::1/128                 md5" >> "${PGHBA}"
+
+# Add allowed networks from configuration
+if bashio::config.has_value 'allow_from'; then
+    bashio::log.info "Configuring network access control..."
+    for network in $(bashio::config 'allow_from'); do
+        echo "host    all             all             ${network}            md5" >> "${PGHBA}"
+    done
+else
+    # If no specific networks are defined, allow from all
+    echo "host    all             all             0.0.0.0/0             md5" >> "${PGHBA}"
+fi
+
+# Get custom server arguments
+if bashio::config.has_value "server_args"; then
+    POSTGRES_ARGS="$(bashio::config 'server_args')"
+else
+    POSTGRES_ARGS=""
+fi
+
+# Create configured databases
+if bashio::config.has_value "databases"; then
+    su - postgres -c "pg_ctl -D ${PGDATA} start"
+    for database in $(bashio::config 'databases'); do
+        # Check if database already exists
+        DB_EXISTS=$(su - postgres -c "psql -tAc \"SELECT 1 FROM pg_database WHERE datname='${database}'\"")
+        
+        if [ "${DB_EXISTS}" != "1" ]; then
+            bashio::log.info "Creating database: ${database}"
+            su - postgres -c "createdb --template=template_postgis ${database}"
+        else
+            bashio::log.info "Database already exists: ${database}"
+        fi
+    done
+    su - postgres -c "pg_ctl -D ${PGDATA} stop"
+fi
+
+# Create users and set permissions
+if bashio::config.has_value "logins"; then
+    su - postgres -c "pg_ctl -D ${PGDATA} start"
+    for login in $(bashio::config 'logins|keys'); do
+        USERNAME=$(bashio::config "logins[${login}].username")
+        PASSWORD=$(bashio::config "logins[${login}].password")
+        
+        # Check if user already exists
+        USER_EXISTS=$(su - postgres -c "psql -tAc \"SELECT 1 FROM pg_roles WHERE rolname='${USERNAME}'\"")
+        
+        if [ "${USER_EXISTS}" != "1" ]; then
+            bashio::log.info "Creating user: ${USERNAME}"
+            su - postgres -c "psql -c \"CREATE ROLE ${USERNAME} WITH LOGIN PASSWORD '${PASSWORD}';\""
+        else
+            bashio::log.info "Updating password for user: ${USERNAME}"
+            su - postgres -c "psql -c \"ALTER ROLE ${USERNAME} WITH PASSWORD '${PASSWORD}';\""
+        fi
+    done
+    su - postgres -c "pg_ctl -D ${PGDATA} stop"
+fi
+
+# Set rights
+if bashio::config.has_value "rights"; then
+    su - postgres -c "pg_ctl -D ${PGDATA} start"
+    for right in $(bashio::config 'rights|keys'); do
+        DATABASE=$(bashio::config "rights[${right}].database")
+        USERNAME=$(bashio::config "rights[${right}].username")
+        PRIVILEGES=$(bashio::config "rights[${right}].privileges")
+        
+        bashio::log.info "Granting ${PRIVILEGES} on ${DATABASE} to ${USERNAME}"
+        su - postgres -c "psql -c \"GRANT ${PRIVILEGES} ON DATABASE ${DATABASE} TO ${USERNAME};\""
+        
+        # If ALL privileges, also grant schema privileges
+        if [ "${PRIVILEGES}" = "ALL" ]; then
+            su - postgres -c "psql -d ${DATABASE} -c \"GRANT ALL ON SCHEMA public TO ${USERNAME};\""
+            su - postgres -c "psql -d ${DATABASE} -c \"GRANT ALL ON ALL TABLES IN SCHEMA public TO ${USERNAME};\""
+            su - postgres -c "psql -d ${DATABASE} -c \"GRANT ALL ON ALL SEQUENCES IN SCHEMA public TO ${USERNAME};\""
+            su - postgres -c "psql -d ${DATABASE} -c \"GRANT ALL ON ALL FUNCTIONS IN SCHEMA public TO ${USERNAME};\""
+            su - postgres -c "psql -d ${DATABASE} -c \"ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON TABLES TO ${USERNAME};\""
+            su - postgres -c "psql -d ${DATABASE} -c \"ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON SEQUENCES TO ${USERNAME};\""
+            su - postgres -c "psql -d ${DATABASE} -c \"ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON FUNCTIONS TO ${USERNAME};\""
+        fi
+    done
+    su - postgres -c "pg_ctl -D ${PGDATA} stop"
+fi
+
+# Start PostgreSQL
+bashio::log.info "Starting PostgreSQL server with configured parameters..."
+exec s6-setuidgid postgres postgres -D "${PGDATA}" ${POSTGRES_ARGS} 
