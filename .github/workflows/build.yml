@@ -16,6 +16,7 @@ jobs:
     strategy:
       matrix:
         arch: ["aarch64", "amd64", "armhf", "armv7", "i386"]
+      fail-fast: false # Continue with other architectures even if one fails
     steps:
       - name: Checkout the repository
         uses: actions/checkout@v4

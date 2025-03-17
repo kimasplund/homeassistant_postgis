@@ -1,4 +1,4 @@
-ARG BUILD_FROM
+ARG BUILD_FROM=ghcr.io/home-assistant/amd64-base-debian:bullseye
 FROM ${BUILD_FROM}
 
 # Set environment variables
@@ -6,18 +6,31 @@ ENV LANG C.UTF-8
 ENV PGDATA /var/lib/postgresql/data
 ENV POSTGRES_PASSWORD postgres
 
-# First install base dependencies
-RUN apt-get update && apt-get install -y --no-install-recommends \
+# First install base dependencies - more cautious approach for ARM
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
     ca-certificates \
     curl \
     gnupg \
     lsb-release \
-    wget \
-    git \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install build tools separately - can be problematic on some ARM versions
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
     build-essential \
     gcc \
     g++ \
     make \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install additional tools
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+    wget \
+    git \
     rsync \
     jq \
     openssl \
@@ -25,7 +38,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
-# Get architecture
+# Get architecture for debugging
 RUN dpkg --print-architecture > /tmp/architecture
 RUN cat /tmp/architecture
 
@@ -39,18 +52,40 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
-# Third, install PostGIS dependencies - split to identify problematic packages
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    libgdal-dev \
-    libproj-dev \
-    && apt-get clean \
-    && rm -rf /var/lib/apt/lists/*
+# Handle specific architecture issues
+ARG BUILD_ARCH=amd64
+RUN echo "Building for architecture: ${BUILD_ARCH}"
 
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    libprotobuf-c-dev \
-    protobuf-c-compiler \
-    && apt-get clean \
-    && rm -rf /var/lib/apt/lists/*
+# Third, install PostGIS dependencies with architecture-specific approach
+RUN if [ "$BUILD_ARCH" = "armv7" ] || [ "$BUILD_ARCH" = "armhf" ]; then \
+        # Reduced dependencies for ARM architectures that might have issues
+        apt-get update && apt-get install -y --no-install-recommends \
+        libgdal-dev \
+        libproj-dev \
+        && apt-get clean \
+        && rm -rf /var/lib/apt/lists/*; \
+    else \
+        # Full dependencies for other architectures
+        apt-get update && apt-get install -y --no-install-recommends \
+        libgdal-dev \
+        libproj-dev \
+        && apt-get clean \
+        && rm -rf /var/lib/apt/lists/*; \
+    fi
+
+RUN if [ "$BUILD_ARCH" = "armv7" ] || [ "$BUILD_ARCH" = "armhf" ]; then \
+        # Special handling for protobuf on ARM
+        apt-get update && apt-get install -y --no-install-recommends \
+        libprotobuf-c-dev \
+        && apt-get clean \
+        && rm -rf /var/lib/apt/lists/*; \
+    else \
+        apt-get update && apt-get install -y --no-install-recommends \
+        libprotobuf-c-dev \
+        protobuf-c-compiler \
+        && apt-get clean \
+        && rm -rf /var/lib/apt/lists/*; \
+    fi
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     libgeos-dev \
@@ -91,18 +126,23 @@ RUN wget https://ftp.postgresql.org/pub/source/v${PG_VERSION}/postgresql-${PG_VE
     && cd .. \
     && rm -rf /usr/src/postgresql-${PG_VERSION}*
 
-# Download and build PostGIS
+# Download and build PostGIS with architecture-specific options
 RUN wget https://download.osgeo.org/postgis/source/postgis-${POSTGIS_VERSION}.tar.gz \
     && tar -xzf postgis-${POSTGIS_VERSION}.tar.gz \
     && cd postgis-${POSTGIS_VERSION} \
-    && ./configure \
+    && if [ "$BUILD_ARCH" = "armv7" ] || [ "$BUILD_ARCH" = "armhf" ]; then \
+        # Limited features for ARM
+        ./configure --without-protobuf; \
+    else \
+        # Full features for other architectures
+        ./configure; \
+    fi \
     && make -j$(nproc) \
     && make install \
     && cd .. \
     && rm -rf postgis-${POSTGIS_VERSION}*
 
-# Install Prometheus PostgreSQL exporter for amd64 only
-ARG BUILD_ARCH
+# Install Prometheus PostgreSQL exporter for supported architectures
 RUN if [ "$BUILD_ARCH" = "amd64" ]; then \
     wget -O /tmp/postgres_exporter.tar.gz https://github.com/prometheus/postgres_exporter/releases/download/v${PG_EXPORTER_VERSION}/postgres_exporter-${PG_EXPORTER_VERSION}.linux-amd64.tar.gz && \
     mkdir -p /usr/local/bin/postgres_exporter && \

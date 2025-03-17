@@ -152,6 +152,8 @@ To view and analyze the metrics, you'll need to set up a Prometheus server and c
 
 > **Note:** The Prometheus exporter is fully supported on amd64 and aarch64 (ARM64) architectures. For other architectures (armv7, armhf, i386), the exporter will be disabled even if enabled in configuration due to binary availability limitations.
 
+> **ARM architecture note:** On armhf and armv7 architectures, PostGIS is built with reduced functionality (without protobuf support) to improve compatibility and build success. This should not affect most use cases but may limit some advanced features.
+
 ## Using PostGIS with Home Assistant
 
 PostGIS extends PostgreSQL with geospatial capabilities. Here are some example queries you can use with Home Assistant data:
