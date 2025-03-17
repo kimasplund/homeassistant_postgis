@@ -53,7 +53,6 @@ server_args: "-c log_min_duration_statement=200"
 allow_from:
   - 192.168.0.0/24
   - 10.0.0.0/8
-prometheus_exporter: true
 ```
 
 ### Option: `databases` (required)
@@ -109,10 +108,6 @@ Additional arguments to pass to the PostgreSQL server.
 
 List of IP networks that are allowed to connect to PostgreSQL. If empty, allows connections from anywhere.
 
-### Option: `prometheus_exporter` (optional)
-
-Enable or disable the Prometheus metrics exporter for PostgreSQL. Default is `false`.
-
 ## Using with Home Assistant
 
 To use this database with Home Assistant, update your `configuration.yaml`:
@@ -139,15 +134,6 @@ To manually create a backup, in the Home Assistant UI:
 To restore from a backup, in the Home Assistant UI:
 1. First, list available backups: `/usr/local/bin/restore-postgres`
 2. Restore from a specific backup: `/usr/local/bin/restore-postgres postgres_backup_YYYY-MM-DD_HH-MM-SS.sql.gz`
-
-## Prometheus Metrics
-
-When `prometheus_exporter` is enabled, PostgreSQL metrics are exposed on port 9187. You can access them at:
-`http://a0d7b954-postgresql:9187/metrics`
-
-To view and analyze the metrics, you'll need to set up a Prometheus server and configure it to scrape metrics from this endpoint.
-
-> **Note:** The Prometheus exporter is fully supported on both amd64 and aarch64 (ARM64) architectures.
 
 ## Using PostGIS with Home Assistant
 

@@ -34,7 +34,6 @@ options:
   effective_cache_size: "512MB"
   server_args: ""
   allow_from: []
-  prometheus_exporter: false
 schema:
   databases:
     - str
@@ -55,5 +54,4 @@ schema:
   server_args: str?
   allow_from:
     - str?
-  prometheus_exporter: bool
 image: "ghcr.io/kimasplund/{arch}-homeassistant-postgis" 
