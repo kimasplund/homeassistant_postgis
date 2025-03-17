@@ -10,6 +10,20 @@ if ! bashio::config.true 'prometheus_exporter'; then
     exit 0
 fi
 
+# Check if exporter is available for this architecture
+if [ ! -x "/usr/local/bin/postgres_exporter/postgres_exporter" ]; then
+    bashio::log.warning "Prometheus PostgreSQL exporter is not available for this architecture"
+    sleep infinity
+    exit 0
+fi
+
+# Check if exporter is a dummy script
+if grep -q "not available" "/usr/local/bin/postgres_exporter/postgres_exporter"; then
+    bashio::log.warning "Prometheus PostgreSQL exporter is not available for this architecture"
+    sleep infinity
+    exit 0
+fi
+
 bashio::log.info "Starting Prometheus PostgreSQL exporter..."
 
 # Wait for PostgreSQL to start

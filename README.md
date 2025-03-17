@@ -150,6 +150,8 @@ When `prometheus_exporter` is enabled, PostgreSQL metrics are exposed on port 91
 
 To view and analyze the metrics, you'll need to set up a Prometheus server and configure it to scrape metrics from this endpoint.
 
+> **Note:** The Prometheus exporter is fully supported on amd64 and aarch64 (ARM64) architectures. For other architectures (armv7, armhf, i386), the exporter will be disabled even if enabled in configuration due to binary availability limitations.
+
 ## Using PostGIS with Home Assistant
 
 PostGIS extends PostgreSQL with geospatial capabilities. Here are some example queries you can use with Home Assistant data:
